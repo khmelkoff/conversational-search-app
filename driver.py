@@ -15,9 +15,6 @@ chat_history = []
 
 load_dotenv()
 
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-
 ALLOWED_PDF_EXTENSIONS = [".pdf"]
 
 
@@ -52,12 +49,12 @@ async def gen_model(pdf_docs: Annotated[List[UploadFile], File()] = None,
 
 
 @app.get("/search")
-async def search(query_data: Search):
-    query = query_data.query
+async def search(query: str):
     print(f"query: {query}")
     converse = model_obj.get_model()
     if converse is None:
         raise HTTPException(status_code=500, detail="Model Not Generated")
     response = converse({"question": query})
-    chat_history.append(response['chat_history'])
+    chat_history.append(response['chat_history'])  # TODO
+
     return response['answer']

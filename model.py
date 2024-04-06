@@ -1,10 +1,10 @@
 from PyPDF2 import PdfReader
-from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings  #, OpenAIEmbeddings, HuggingFaceInstructEmbeddings
+from langchain.text_splitter import CharacterTextSplitter, RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings  # HuggingFaceInstructEmbeddings?
 from langchain_community.vectorstores import FAISS
 # from langchain.chat_models import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
+# from langchain.memory import ConversationBufferMemory
+# from langchain.chains import ConversationalRetrievalChain
 
 from langchain_community.llms import LlamaCpp
 # from langchain_core.callbacks import CallbackManager, StreamingStdOutCallbackHandler
@@ -21,11 +21,18 @@ import re
 
 
 def format_docs(docs):
-    return "\n\n".join([d.page_content for d in docs])
+    string = "\n\n".join([d.page_content for d in docs])
+    print('refs:', string)
+    return string
 
 
 def text_cleaner(txt: str):
-    txt = re.sub(r' -\n', '', txt)
+    txt = re.sub(r'\s*-\n', '', txt)
+    txt = re.sub(r'\s\.', '.', txt)
+    txt = re.sub(r'\s,', ',', txt)
+    txt = re.sub(r'\s»', '»', txt)
+    txt = re.sub(r'\s+', ' ', txt)
+    txt = re.sub(r'www\S+\s', '', txt)
     return txt
 
 
@@ -47,17 +54,24 @@ class Model:
             for page_num in range(num_pages):
                 page = pdf_reader.pages[page_num]
                 text += page.extract_text()
-        print(text)
+
+        with open('text', 'w') as handler:
+            handler.write(text)
+
+        text = text_cleaner(text)
+        # print(text)
         return text
 
     @staticmethod
     def get_txt_chunks(text):
-        text_splitter = CharacterTextSplitter(
-            separator="\n",
-            chunk_size=512,
-            chunk_overlap=256,
-            length_function=len
+        text_splitter = RecursiveCharacterTextSplitter(
+            separators=['.'],
+            chunk_size=700,
+            chunk_overlap=100,
+            length_function=len,
+            is_separator_regex=False,
         )
+
         chunks = text_splitter.split_text(text)
         print('chunks:', len(chunks))
         return chunks
@@ -77,27 +91,48 @@ class Model:
 
         llm = LlamaCpp(
             model_path="../models/saiga_mistral_7b_q8_0.gguf",
-            temperature=0.8,
+            temperature=0.7,
             max_tokens=512,
             top_p=1,
             callback_manager=None,  # callback_manager,
             verbose=True,  # Verbose is required to pass to the callback manager
-            n_ctx=2048,
+            n_ctx=3072,
             n_gpu_layers=30,
         )
 
-        memory = ConversationBufferMemory(
-            memory_key='chat_history', return_messages=True)
+        # memory = ConversationBufferMemory(
+        #     memory_key='chat_history', return_messages=True)
+        #
+        # conversation_chain = ConversationalRetrievalChain.from_llm(
+        #     llm=llm,
+        #     retriever=vectorstore.as_retriever(
+        #         search_type="similarity",  # тип поиска похожих документов
+        #         search_kwargs={'k': 2, 'score_threshold': 1.6}
+        #     ),
+        #     memory=memory
+        # )
+        # return conversation_chain
 
-        conversation_chain = ConversationalRetrievalChain.from_llm(
-            llm=llm,
-            retriever=vectorstore.as_retriever(
-                search_type="similarity",  # тип поиска похожих документов
-                search_kwargs={'k': 2, 'score_threshold': 1.6}
-            ),
-            memory=memory
+        retriever = vectorstore.as_retriever(
+            search_type="similarity",  # тип поиска похожих документов
+            search_kwargs={'k': 3}
         )
-        return conversation_chain
+
+        template = """
+        Answer the question in Russian based on the following context:
+        USER: {context} {question} 
+        ASSISTANT:"""
+
+        prompt = ChatPromptTemplate.from_template(template)
+
+        chain = (
+                {"context": retriever | format_docs, "question": RunnablePassthrough()}
+                | prompt
+                | llm
+                | StrOutputParser()
+        )
+
+        return chain
 
     @staticmethod
     def web_scrap_to_txt(url):
@@ -128,7 +163,7 @@ class Model:
         print("completed processing")
         db_data = self.db.get_data()
         print("completed getting data")
-        db_data = db_data + " ".join(self.get_txt_chunks(raw_text))  # TODO: correct db
+        db_data = ''  # db_data + " ".join(self.get_txt_chunks(raw_text))  # TODO: correct db
         vectordb = self.get_vectors(self.get_txt_chunks(raw_text))
         print("completed vectorization")
         self.converse = self.get_conv_chain(vectordb)

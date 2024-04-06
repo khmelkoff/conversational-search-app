@@ -7,7 +7,10 @@ The application provides a RESTful API that allows clients to upload files (pdf,
 
 - OpenAI Changed to Llama.cpp based on the llama-cpp-python library
 - Corrected get /search error
-- Used cointegrated/LaBSE-en-ru HuggingFaceEmbedding   
+- Used cointegrated/LaBSE-en-ru HuggingFaceEmbedding
+- ConversationalRetrievalChain replaced with new LCEL chain
+- CharacterTextSplitter replaced with RecursiveCharacterTextSplitter
+- Added a simple text cleaner
 
 ## Local Setup
 

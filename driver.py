@@ -54,7 +54,10 @@ async def search(query: str):
     converse = model_obj.get_model()
     if converse is None:
         raise HTTPException(status_code=500, detail="Model Not Generated")
-    response = converse({"question": query})
-    chat_history.append(response['chat_history'])  # TODO
+    # response = converse({"question": query})
+    # chat_history.append(response['chat_history'])  # TODO
 
-    return response['answer']
+    response = converse.invoke(query)
+    print(response)
+
+    return response
